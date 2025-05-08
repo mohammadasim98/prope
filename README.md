@@ -17,7 +17,7 @@ Here we demo with PyTorch version:
 ```python
 # Say we have C images, each carries with camera infomation, which would be used for cross-view understanding.
 viewmats: Tensor # (B, C, 4, 4) camera world-to-camera matrix
-Ks Tensor # (B, C, 3, 3) camera intrinsic matrix
+Ks: Tensor # (B, C, 3, 3) camera intrinsic matrix
 
 # In transformer we typically patchify the images into tokens. Say
 # the image size is (256, 384) and patch size is 16.
