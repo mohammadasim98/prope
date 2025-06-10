@@ -41,6 +41,7 @@ def prope_dot_product_attention(
     patches_y: int,  # How many patches tall is each image?
     image_width: int,  # Width of the image. Used to normalize intrinsics.
     image_height: int,  # Height of the image. Used to normalize intrinsics.
+    **kwargs,
 ) -> jax.Array:
     """Similar to jax.nn.dot_product_attention, but applies PRoPE-style
     positional encoding.
@@ -119,10 +120,8 @@ def prope_dot_product_attention(
         query=_apply_block_diagonal(q, transforms_q),
         key=_apply_block_diagonal(k, transforms_kv),
         value=_apply_block_diagonal(v, transforms_kv),
-        bias=None,
-        mask=None,
+        **kwargs,
     )
-    print(out.shape, out.sum())
     out = _apply_block_diagonal(out, transforms_o)
     assert out.shape == (batch, seqlen, num_heads, head_dim)
     return out
