@@ -178,9 +178,11 @@ def _rope_apply_coeffs(
     x_in = feats[..., : feats.shape[-1] // 2]
     y_in = feats[..., feats.shape[-1] // 2 :]
     return jnp.concatenate(
-        [cos * x_in + sin * y_in, -sin * x_in + cos * y_in]
-        if not inverse
-        else [cos * x_in - sin * y_in, sin * x_in + cos * y_in],
+        (
+            [cos * x_in + sin * y_in, -sin * x_in + cos * y_in]
+            if not inverse
+            else [cos * x_in - sin * y_in, sin * x_in + cos * y_in]
+        ),
         axis=-1,
     )
 

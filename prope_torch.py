@@ -22,11 +22,11 @@
 # SOFTWARE.
 
 from functools import partial
-from typing import Optional
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+
 
 class PropeDotProductAttention(torch.nn.Module):
 
@@ -62,9 +62,7 @@ class PropeDotProductAttention(torch.nn.Module):
         )
         coeffs_y: Tuple[torch.Tensor, torch.Tensor] = _rope_precompute_coeffs(
             torch.tile(
-                torch.repeat_interleave(
-                    torch.arange(patches_y), patches_x
-                ),
+                torch.repeat_interleave(torch.arange(patches_y), patches_x),
                 (cameras,),
             ),
             freq_base=freq_base,
@@ -78,7 +76,9 @@ class PropeDotProductAttention(torch.nn.Module):
 
     def forward(self, q, k, v, viewmats, Ks, **kwargs):
         return prope_dot_product_attention(
-            q, k, v, 
+            q,
+            k,
+            v,
             viewmats=viewmats,
             Ks=Ks,
             patches_x=self.patches_x,
@@ -151,7 +151,9 @@ def prope_dot_product_attention(
     # broadcasting.
     if coeffs_x is None:
         coeffs_x = _rope_precompute_coeffs(
-            torch.tile(torch.arange(patches_x, device=q.device), (patches_y * cameras,)),
+            torch.tile(
+                torch.arange(patches_x, device=q.device), (patches_y * cameras,)
+            ),
             freq_base=100.0,
             freq_scale=1.0,
             feat_dim=head_dim // 4,
@@ -252,9 +254,11 @@ def _rope_apply_coeffs(
     x_in = feats[..., : feats.shape[-1] // 2]
     y_in = feats[..., feats.shape[-1] // 2 :]
     return torch.cat(
-        [cos * x_in + sin * y_in, -sin * x_in + cos * y_in]
-        if not inverse
-        else [cos * x_in - sin * y_in, sin * x_in + cos * y_in],
+        (
+            [cos * x_in + sin * y_in, -sin * x_in + cos * y_in]
+            if not inverse
+            else [cos * x_in - sin * y_in, sin * x_in + cos * y_in]
+        ),
         dim=-1,
     )
 
