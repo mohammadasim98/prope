@@ -5,6 +5,7 @@
         "**/*.pyc": true,
         "**/*.pyo": true,
         "**/*.pyd": true,
+        "*.egg-info/": true,
     },
     "files.watcherExclude": {
         "**/__pycache__/**": true,
@@ -12,5 +13,7 @@
         "**/*.pyc": true,
         "**/*.pyo": true,
         "**/*.pyd": true,
+        ".Python": true,
+        "*.egg-info/**": true,
     }
 } 
