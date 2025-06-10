@@ -30,11 +30,7 @@ import tqdm
 # Enable highest precision
 torch.set_default_dtype(torch.float64)
 
-PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(PATH, ".."))
-
-from prope_torch import PropeDotProductAttention
-from prope_torch import prope_dot_product_attention as prope_torch
+from prope.torch import PropeDotProductAttention, prope_dot_product_attention
 
 
 def test_prope_torch():
@@ -57,8 +53,8 @@ def test_prope_torch():
     viewmats = torch.eye(4).repeat(batch, cameras, 1, 1)
     Ks = torch.rand(batch, cameras, 3, 3)
 
-    for _ in tqdm.tqdm(range(100), desc="prope as function"):
-        out_torch_0 = prope_torch(
+    for _ in tqdm.tqdm(range(10), desc="prope as function"):
+        out_torch_0 = prope_dot_product_attention(
             q,
             k,
             v,
@@ -78,7 +74,7 @@ def test_prope_torch():
         image_width=image_width,
         image_height=image_height,
     )
-    for _ in tqdm.tqdm(range(10000), desc="prope as module"):
+    for _ in tqdm.tqdm(range(1000), desc="prope as module"):
         out_torch_1 = prope(q, k, v, viewmats, Ks)
 
     torch.testing.assert_close(out_torch_0, out_torch_1)

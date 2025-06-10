@@ -32,11 +32,8 @@ import torch
 jax.config.update("jax_enable_x64", True)
 torch.set_default_dtype(torch.float64)
 
-PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(PATH, ".."))
-
-from prope_jax import prope_dot_product_attention as prope_jax
-from prope_torch import prope_dot_product_attention as prope_torch
+from prope.jax import prope_dot_product_attention as prope_jax
+from prope.torch import prope_dot_product_attention as prope_torch
 
 
 def test_compare_jax_torch():
