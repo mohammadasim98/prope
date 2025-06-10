@@ -97,7 +97,7 @@ def prope_dot_product_attention(
     v: torch.Tensor,  # (batch, num_heads, seqlen, head_dim)
     *,
     viewmats: torch.Tensor,  # (batch, cameras, 4, 4)
-    Ks: torch.Tensor,  # (batch, cameras, 3, 3)
+    Ks: Optional[torch.Tensor],  # (batch, cameras, 3, 3)
     patches_x: int,  # How many patches wide is each image?
     patches_y: int,  # How many patches tall is each image?
     image_width: int,  # Width of the image. Used to normalize intrinsics.
@@ -122,29 +122,37 @@ def prope_dot_product_attention(
     cameras = viewmats.shape[1]
     assert q.shape == k.shape == v.shape
     assert viewmats.shape == (batch, cameras, 4, 4)
-    assert Ks.shape == (batch, cameras, 3, 3)
+    assert Ks is None or Ks.shape == (batch, cameras, 3, 3)
     assert seqlen == cameras * patches_x * patches_y
 
     # Normalize camera intrinsics.
-    Ks_norm = torch.zeros_like(Ks)
-    Ks_norm[..., 0, 0] = Ks[..., 0, 0] / image_width
-    Ks_norm[..., 1, 1] = Ks[..., 1, 1] / image_height
-    Ks_norm[..., 0, 2] = Ks[..., 0, 2] / image_width - 0.5
-    Ks_norm[..., 1, 2] = Ks[..., 1, 2] / image_height - 0.5
-    Ks_norm[..., 2, 2] = 1.0
-    del Ks
+    if Ks is not None:
+        Ks_norm = torch.zeros_like(Ks)
+        Ks_norm[..., 0, 0] = Ks[..., 0, 0] / image_width
+        Ks_norm[..., 1, 1] = Ks[..., 1, 1] / image_height
+        Ks_norm[..., 0, 2] = Ks[..., 0, 2] / image_width - 0.5
+        Ks_norm[..., 1, 2] = Ks[..., 1, 2] / image_height - 0.5
+        Ks_norm[..., 2, 2] = 1.0
+        del Ks
 
-    # Compute the camera projection matrices we use in PRoPE.
-    # - K is an `image<-camera` transform.
-    # - viewmats is a `camera<-world` transform.
-    # - P = lift(K) @ viewmats is an `image<-world` transform.
-    P = torch.einsum("...ij,...jk->...ik", _lift_K(Ks_norm), viewmats)
-    P_T = P.transpose(-1, -2)
-    P_inv = torch.einsum(
-        "...ij,...jk->...ik",
-        _invert_SE3(viewmats),
-        _lift_K(_invert_K(Ks_norm)),
-    )
+        # Compute the camera projection matrices we use in PRoPE.
+        # - K is an `image<-camera` transform.
+        # - viewmats is a `camera<-world` transform.
+        # - P = lift(K) @ viewmats is an `image<-world` transform.
+        P = torch.einsum("...ij,...jk->...ik", _lift_K(Ks_norm), viewmats)
+        P_T = P.transpose(-1, -2)
+        P_inv = torch.einsum(
+            "...ij,...jk->...ik",
+            _invert_SE3(viewmats),
+            _lift_K(_invert_K(Ks_norm)),
+        )
+
+    else:
+        # GTA formula. P is `camera<-world` transform.
+        P = viewmats
+        P_T = P.transpose(-1, -2)
+        P_inv = _invert_SE3(viewmats)
+
     assert P.shape == P_inv.shape == (batch, cameras, 4, 4)
 
     # Precompute cos/sin terms for RoPE. We use tiles/repeats for 'row-major'
