@@ -22,10 +22,73 @@
 # SOFTWARE.
 
 from functools import partial
+from typing import Optional
 from typing import Callable, Tuple
 
 import torch
 import torch.nn.functional as F
+
+class PropeDotProductAttention(torch.nn.Module):
+
+    coeffs_x_0: torch.Tensor
+    coeffs_x_1: torch.Tensor
+    coeffs_y_0: torch.Tensor
+    coeffs_y_1: torch.Tensor
+
+    def __init__(
+        self,
+        head_dim: int,
+        cameras: int,
+        patches_x: int,
+        patches_y: int,
+        image_width: int,
+        image_height: int,
+        freq_base: float = 100.0,
+        freq_scale: float = 1.0,
+    ):
+        super().__init__()
+        self.head_dim = head_dim
+        self.cameras = cameras
+        self.patches_x = patches_x
+        self.patches_y = patches_y
+        self.image_width = image_width
+        self.image_height = image_height
+
+        coeffs_x: Tuple[torch.Tensor, torch.Tensor] = _rope_precompute_coeffs(
+            torch.tile(torch.arange(patches_x), (patches_y * cameras,)),
+            freq_base=freq_base,
+            freq_scale=freq_scale,
+            feat_dim=head_dim // 4,
+        )
+        coeffs_y: Tuple[torch.Tensor, torch.Tensor] = _rope_precompute_coeffs(
+            torch.tile(
+                torch.repeat_interleave(
+                    torch.arange(patches_y), patches_x
+                ),
+                (cameras,),
+            ),
+            freq_base=freq_base,
+            freq_scale=freq_scale,
+            feat_dim=head_dim // 4,
+        )
+        self.register_buffer("coeffs_x_0", coeffs_x[0])
+        self.register_buffer("coeffs_x_1", coeffs_x[1])
+        self.register_buffer("coeffs_y_0", coeffs_y[0])
+        self.register_buffer("coeffs_y_1", coeffs_y[1])
+
+    def forward(self, q, k, v, viewmats, Ks, **kwargs):
+        return prope_dot_product_attention(
+            q, k, v, 
+            viewmats=viewmats,
+            Ks=Ks,
+            patches_x=self.patches_x,
+            patches_y=self.patches_y,
+            image_width=self.image_width,
+            image_height=self.image_height,
+            coeffs_x=(self.coeffs_x_0, self.coeffs_x_1),
+            coeffs_y=(self.coeffs_y_0, self.coeffs_y_1),
+            **kwargs,
+        )
 
 
 def prope_dot_product_attention(
@@ -39,6 +102,8 @@ def prope_dot_product_attention(
     patches_y: int,  # How many patches tall is each image?
     image_width: int,  # Width of the image. Used to normalize intrinsics.
     image_height: int,  # Height of the image. Used to normalize intrinsics.
+    coeffs_x: Optional[torch.Tensor] = None,
+    coeffs_y: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> torch.Tensor:
     """Similar to torch.nn.functional.scaled_dot_product_attention, but applies PRoPE-style
@@ -73,33 +138,36 @@ def prope_dot_product_attention(
     # - K is an `image<-camera` transform.
     # - viewmats is a `camera<-world` transform.
     # - P = lift(K) @ viewmats is an `image<-world` transform.
-    P = torch.matmul(_lift_K(Ks_norm), viewmats)
+    P = torch.einsum("...ij,...jk->...ik", _lift_K(Ks_norm), viewmats)
     P_T = P.transpose(-1, -2)
-    P_inv = torch.matmul(
+    P_inv = torch.einsum(
+        "...ij,...jk->...ik",
         _invert_SE3(viewmats),
         _lift_K(_invert_K(Ks_norm)),
     )
     assert P.shape == P_inv.shape == (batch, cameras, 4, 4)
 
     # Precompute cos/sin terms for RoPE. We use tiles/repeats for 'row-major'
-    # broadcasting, PyTorch should optimize these away.
-    coeffs_x = _rope_precompute_coeffs(
-        torch.tile(torch.arange(patches_x, device=q.device), (patches_y * cameras,)),
-        freq_base=100.0,
-        freq_scale=1.0,
-        feat_dim=head_dim // 4,
-    )
-    coeffs_y = _rope_precompute_coeffs(
-        torch.tile(
-            torch.repeat_interleave(
-                torch.arange(patches_y, device=q.device), patches_x
+    # broadcasting.
+    if coeffs_x is None:
+        coeffs_x = _rope_precompute_coeffs(
+            torch.tile(torch.arange(patches_x, device=q.device), (patches_y * cameras,)),
+            freq_base=100.0,
+            freq_scale=1.0,
+            feat_dim=head_dim // 4,
+        )
+    if coeffs_y is None:
+        coeffs_y = _rope_precompute_coeffs(
+            torch.tile(
+                torch.repeat_interleave(
+                    torch.arange(patches_y, device=q.device), patches_x
+                ),
+                (cameras,),
             ),
-            (cameras,),
-        ),
-        freq_base=100.0,
-        freq_scale=1.0,
-        feat_dim=head_dim // 4,
-    )
+            freq_base=100.0,
+            freq_scale=1.0,
+            feat_dim=head_dim // 4,
+        )
 
     # Block-diagonal transforms to the inputs and outputs of the attention operator.
     assert head_dim % 4 == 0
