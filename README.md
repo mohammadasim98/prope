@@ -34,3 +34,7 @@ output = prope_dot_product_attention(
     Q, K, V,viewmats=viewmats, Ks=Ks, patches_x=patches_x, patches_y=patches_y, image_width=image_width, image_height=image_height
 )
 ```
+
+## Experiments
+
+- Improve LVSM on the task of Novel View Syntheis: [checkout `nvs` branch](https://github.com/liruilong940607/prope/tree/nvs)
