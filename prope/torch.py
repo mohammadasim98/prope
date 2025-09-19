@@ -56,9 +56,11 @@ from typing import Callable, Optional, Tuple, List
 
 import torch
 import torch.nn.functional as F
+from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 
+from einops import rearrange
 
-class PropeDotProductAttention(torch.nn.Module):
+class PropeFlashAttention(torch.nn.Module):
     """PRoPE attention with precomputed RoPE coefficients."""
 
     coeffs_x_0: torch.Tensor
@@ -224,14 +226,34 @@ def prope_dot_product_attention(
         coeffs_y=coeffs_y,
     )
 
-    out = F.scaled_dot_product_attention(
-        query=apply_fn_q(q),
-        key=apply_fn_kv(k),
-        value=apply_fn_kv(v),
+    q = apply_fn_q(q)
+    k = apply_fn_kv(k)
+    v = apply_fn_kv(v)
+
+    q = rearrange(q, "... h n d --> ... n h d")
+    k = rearrange(k, "... h n d --> ... n h d")
+    v = rearrange(v, "... h n d --> ... n h d")
+
+    out = flash_attn_func(
+        query=q,
+        key=k,
+        value=v,
         **kwargs,
     )
+
+    out = rearrange(out, "... n h d --> ... h n d")
+
+    # out = F.scaled_dot_product_attention(
+    #     query=apply_fn_q(q),
+    #     key=apply_fn_kv(k),
+    #     value=apply_fn_kv(v),
+    #     **kwargs,
+    # )
     out = apply_fn_o(out)
     assert out.shape == (batch, num_heads, seqlen, head_dim)
+
+    out = rearrange(out, "... h n d --> ... n h d")
+
     return out
 
 
